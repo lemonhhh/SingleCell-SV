@@ -21,7 +21,7 @@ neg:
     - 随机点
     - loop
     - AB区间转换的点
-    
+
 ## Model
 
 ## Usage
@@ -35,3 +35,6 @@ conda env create -f sv.yml
 ./rawpair2cool.sh
 ```
 
+## Reconstruct 3D model
+
+snp文件来自Comprehensive, integrated, and phased whole-genome analysis of the primary ENCODE cell line K562
