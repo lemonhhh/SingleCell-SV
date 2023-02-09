@@ -10,23 +10,28 @@ Structural variation (SV) is generally defined as a region of DNA approximately 
 - data_process.ipynb
 生成模型的输入数据,包括pos label的和neg label的。
 
-## 数据集
-只关注K562细胞系（暂时）
-
+## DataSet
 pos: 高置信SV list中breakpoints附近的小矩阵。
 neg:
-- 癌症细胞系
+- 癌症细胞系(K562)
     - 不与breakpoint有overlap的区域
+来自snHiC的数据集
 - GM12878
+来自Dip-c的数据集
     - 随机点
     - loop
     - AB区间转换的点
-
+    
+## Model
 
 ## Usage
 
-'''
+```shell
 conda env create -f sv.yml
-'''
+```
 
+
+```shell
 ./rawpair2cool.sh
+```
+
