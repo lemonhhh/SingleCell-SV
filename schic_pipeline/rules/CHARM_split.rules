@@ -1,0 +1,83 @@
+#拆分出ct的reads
+rule ctSplit:
+    input:
+        "Rawdata/{sample}/{sample}_R1.fq.gz",
+        "Rawdata/{sample}/{sample}_R2.fq.gz",
+    output: 
+        split_R1="processed/{sample}/ct/{sample}.ct.R1.fq.gz",
+        split_R2="processed/{sample}/ct/{sample}.ct.R2.fq.gz",
+    conda:"../envs/main_env.yaml"
+    threads: config["resources"]["cutadapt_cpu_threads"]
+    resources:
+        nodes = config["resources"]["cutadapt_cpu_threads"]
+    params:
+        adapter=r"XGGTTGAGGTAGTGGTATAGCTTCGTGTATAAGAGACAG;o=32"
+    shell:"""
+        mkdir -p processed/{wildcards.sample}/ct
+        cutadapt -G '{params.adapter}' -j {threads} --untrimmed-output /dev/null --untrimmed-paired-output /dev/null -o {output.split_R1} -p {output.split_R2} {input} 
+        """
+
+#拆分出atac的reads
+rule atacSplit:
+    input:
+        "Rawdata/{sample}/{sample}_R1.fq.gz",
+        "Rawdata/{sample}/{sample}_R2.fq.gz",
+    output:
+        split_R1="processed/{sample}/atac/{sample}.atac.R1.fq.gz",
+        split_R2="processed/{sample}/atac/{sample}.atac.R2.fq.gz",
+    conda:"../envs/main_env.yaml"
+    threads: config["resources"]["cutadapt_cpu_threads"]
+    resources:
+        nodes = config["resources"]["cutadapt_cpu_threads"]
+    params:
+        adapter=r"XGGTTGAGGTAGTAAGTCCTGGATGTGTATAAGAGACAG;o=32"
+    shell:"""
+        mkdir -p processed/{wildcards.sample}/atac
+        cutadapt -G '{params.adapter}' -j {threads} --untrimmed-output /dev/null --untrimmed-paired-output /dev/null -o {output.split_R1} -p {output.split_R2} {input} 
+        """
+
+#分出dna的和rna的来
+rule split:
+    input:
+        "Rawdata/{sample}/{sample}_R1.fq.gz",
+        "Rawdata/{sample}/{sample}_R2.fq.gz"
+    output: 
+        DNA_R1="processed/{sample}/DNA/{sample}.dna.R1.fq.gz",
+        DNA_R2="processed/{sample}/DNA/{sample}.dna.R2.fq.gz",
+        RNA_R1="processed/{sample}/RNA/{sample}.rna.R1.fq.gz",
+        RNA_R2="processed/{sample}/RNA/{sample}.rna.R2.fq.gz",
+    conda:"../envs/main_env.yaml"
+        
+    threads: config["resources"]["cutadapt_cpu_threads"]
+    resources:
+        nodes = config["resources"]["cutadapt_cpu_threads"]
+    params:
+        adapter=r"XGGTTGAGGTAGTATTGCGCAATG;o=20"
+    shell:"""
+        cutadapt -G '{params.adapter}' -j {threads} --untrimmed-output {output.DNA_R1} --untrimmed-paired-output {output.DNA_R2} -o {output.RNA_R1} -p {output.RNA_R2} {input} 
+        """
+
+'''
+#cutRound2 is for minimize genome contamination in RNA data, 
+probably from exonuclease activity of reverse transcriptase
+'''
+
+#TODO:对拆分出的 RNAreads 只保留 UMI 序列后紧随 polyA 的部分
+rule cutRound2:
+    input:
+        RNA_R1="processed/{sample}/RNA/{sample}.rna.R1.fq.gz",
+        RNA_R2="processed/{sample}/RNA/{sample}.rna.R2.fq.gz"
+    output: 
+        RNA_R1="processed/{sample}/RNA/{sample}.rna.clean.R1.fq.gz",
+        RNA_R2="processed/{sample}/RNA/{sample}.rna.clean.R2.fq.gz",
+    conda:"../envs/main_env.yaml",
+        
+    threads: config["resources"]["cutadapt_cpu_threads"]
+    resources:
+        nodes = config["resources"]["cutadapt_cpu_threads"]  
+    params:
+        adapter=r"XNNNNNNNNTTTTTTTTTTTTTTT;o=18"
+    shell:"""
+        #--discard-untrimmed 整个被丢掉
+        cutadapt --action=none --discard-untrimmed -G '{params.adapter}' -j {threads} -o {output.RNA_R1} -p {output.RNA_R2} {input}
+        """

@@ -1,0 +1,297 @@
+#只用R2去map
+
+rule atac_R2_mapping:
+    input:
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+        R2 = rules.atacSplit.output.split_R2
+    output:
+        R2sortbam = "processed/{sample}/atac/{sample}.R2.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R2} | samtools sort -@{threads} -o {output.R2sortbam} -
+    """
+
+#去重
+rule atac_picard_sort_rmdup:
+    input:
+        R2sortbam = rules.atac_R2_mapping.output.R2sortbam,
+    output:
+        re_sort = temp("processed/{sample}/atac/{sample}.atac.R2.querysort.bam"),
+        rmdup_bam = "processed/{sample}/atac/{sample}.atac.R2.rmdup.bam",
+        rmdup_mat = "processed/{sample}/atac/{sample}.atac.R2.rmdup.mat",
+    conda:"../envs/main_env.yaml",
+
+    shell:"""
+        picard SortSam INPUT={input.R2sortbam} OUTPUT={output.re_sort} SORT_ORDER=queryname
+        picard MarkDuplicates -I {output.re_sort} -O {output.rmdup_bam} -M {output.rmdup_mat} --REMOVE_DUPLICATES true
+    """
+
+#bam to bed
+rule atac_bam2bed:
+    input:
+        rmdup_bam = rules.atac_picard_sort_rmdup.output.rmdup_bam,
+    output:
+        R2_dedup_bed = "processed/{sample}/atac/{sample}.atac.R2_5.bed.gz"
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bedtools bamtobed -i {input.rmdup_bam} | gzip > {output.R2_dedup_bed}
+    """
+
+
+
+#TODO：将FASTQ转换为表格格式,包含长度、GC含量、GC偏好
+rule atac_fastq2tabfastq:
+    input:
+        R1 = rules.atacSplit.output.split_R1,
+        R2 = rules.atacSplit.output.split_R2,
+    output:
+        R1_out = temp("processed/{sample}/tabfastq/{sample}.atac.R1.tabfastq.gz"),
+        R2_out = temp("processed/{sample}/tabfastq/{sample}.atac.R2.tabfastq.gz"),
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        seqkit fx2tab {input.R1} | gzip > {output.R1_out}
+        seqkit fx2tab {input.R2} | gzip > {output.R2_out}
+    """
+
+#TODO:去除malbac造成的重复
+rule atac_extract_fastq:
+    input:
+        R2_dedup_bed = rules.atac_bam2bed.output.R2_dedup_bed,
+        R1 = rules.atac_fastq2tabfastq.output.R1_out,
+        R2 = rules.atac_fastq2tabfastq.output.R2_out,
+    output:
+        R1out_tabfastq = temp("processed/{sample}/tabfastq/{sample}.atac.R1.dedup.tabfastq.gz"),
+        R2out_tabfastq = temp("processed/{sample}/tabfastq/{sample}.atac.R2.dedup.tabfastq.gz"),
+    params:
+        max_sep_distance = 20,
+        min_mapping_qual = 30,
+    conda: "../envs/main_env.yaml",
+    shell:"""
+        Rscript ./CHARM/CHARM_scripts/CTHiRES.extract_dedup_reads.R {params.max_sep_distance} {params.min_mapping_qual} \
+                            {input.R2_dedup_bed} {input.R1} {input.R2} {output.R1out_tabfastq} {output.R2out_tabfastq}
+    """
+
+#malbac dedup之后的R1和R2
+rule atac_tabfastq2fastq:
+    input:
+        R1tab = rules.atac_extract_fastq.output.R1out_tabfastq,
+        R2tab = rules.atac_extract_fastq.output.R2out_tabfastq,
+    output:
+        R1 = "processed/{sample}/atac/{sample}.atac.dedup.R1.fq.gz",
+        R2 = "processed/{sample}/atac/{sample}.atac.dedup.R2.fq.gz",
+    conda: "../envs/main_env.yaml",
+    shell:"""
+        seqkit tab2fx {input.R1tab} | gzip > {output.R1} || touch {output.R1}
+        seqkit tab2fx {input.R2tab} | gzip > {output.R2} || touch {output.R2}
+    """
+
+#去重之后再用R1和R2进行map
+rule atac_pair_end_mapping:
+    #输入去重之后的R1和R2
+    input:
+        R1dedup = rules.atac_tabfastq2fastq.output.R1,
+        R2dedup = rules.atac_tabfastq2fastq.output.R2,
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+    output:
+        sortbam = "processed/atac_all/{sample}.atac.pairend.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    resources:
+        nodes =  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R1dedup} {input.R2dedup} | samtools sort -@{threads} -o {output.sortbam} -
+        samtools index {output.sortbam}
+        """
+
+rule atac_R2_dedup_mapping:
+    input:
+        R2dedup = rules.atac_tabfastq2fastq.output.R2,
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+    output:
+        R2sortbam = "processed/atac_all/{sample}.atac.R2.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    resources:
+        nodes =  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R2dedup} | samtools sort -@{threads} -o {output.R2sortbam} -
+        samtools index {output.R2sortbam}
+        """
+
+        
+
+rule flagstat:
+    input:
+        nodup=rules.atac_pair_end_mapping.output.sortbam
+    output:
+        nodupMetric="processed/{sample}/atac/qc/flagstat/{sample}.nodup.flagstat",
+    threads: 16
+    resources:
+        memPerThread= "100m"
+    conda:"../envs/main_env.yaml",
+    shell:"""
+    samtools flagstat -@ {threads} {input.nodup} > {output.nodupMetric}
+    """
+
+
+#统计片段大小
+rule fragsize:
+    input:
+        bam=rules.atac_pair_end_mapping.output.sortbam
+    output:
+        pdf="processed/{sample}/atac/qc/fragsize/{sample}.nodup.fragsize.pdf",
+        txt="processed/{sample}/atac/qc/fragsize/{sample}.nodup.fragsize.txt",
+    threads: 1
+    resources:
+        memPerThread= "4G"
+    conda:"../envs/main_env.yaml",
+    shell:"""
+    picard CollectInsertSizeMetrics \
+    I={input.bam} \
+    O={output.txt} \
+    H={output.pdf} \
+    VERBOSITY=ERROR QUIET=TRUE \
+    W=1000
+    """
+
+rule tss:
+    input:
+        bam=rules.atac_pair_end_mapping.output.sortbam
+    output:
+        plotdir=directory("processed/{sample}/atac/qc/tssplot"),
+        enrichTSS="processed/{sample}/atac/qc/tssplot/{sample}_tss-enrich.txt",
+        qc1="processed/{sample}/atac/qc/tss/{sample}_reads_in_tss.txt",
+        qc2="processed/{sample}/atac/qc/tss/{sample}_reads_catched_tss.txt",
+    threads: 1
+    resources:
+        memPerThread= "1G"
+    params:
+        chromsize="/share/Data/public/ref_genome/human_ref/GRCh37d5/raw_data/hg19.chr.len",
+        tssbed="/share/Data/public/ref_genome/human_ref/GRCh37d5/raw_data/tss.hg19.clean.bed",
+        TSS_extend="/share/Data/public/ref_genome/human_ref/GRCh37d5/raw_data/tss_extend.hg19.clean.bed"
+    shell:"""
+    ## tss
+    # load conda env built for kundaje pipeline
+    #         dependency in this python script hasn't been independent yet
+    # alias conda=/ds918_208/shared/applications/conda/miniconda3/condabin/conda
+
+    set +u; source ~/anaconda3/bin/activate bds_atac; set -u
+    
+    
+    python CHARM/CHARM_scripts/tss.py \
+    --outdir {output.plotdir} \
+    --outprefix {wildcards.sample} \
+    --tss {params.tssbed} \
+    --finalbam {input.bam} \
+    --chromsizes {params.chromsize}
+    
+    intersectBed -a {params.TSS_extend} -b {input.bam} |wc -l > {output.qc1}
+    intersectBed -a {params.TSS_extend} -b {input.bam} -wa |sort -u |wc -l > {output.qc2}
+
+    set +u; conda deactivate; set -u
+    """
+
+#由bam生成bed文件
+rule bedGeneration:
+    input:
+        bam=rules.atac_pair_end_mapping.output.sortbam
+    output:
+        shift=temp("processed/{sample}/atac/bed/{sample}.shift.bed"),
+        insert__=temp("processed/{sample}/atac/bed/{sample}.insert.bed"),
+    threads: 1
+    resources:
+        memPerThread= "1G"
+    params:
+        f1=config["refs"][config["ref_genome"]]["filter1"],
+        f2=config["refs"][config["ref_genome"]]["filter2"],
+        blacklist=config["refs"][config["ref_genome"]]["blacklist"]
+    conda:"../envs/main_env.yaml",
+    shell:"""
+    bedtools intersect -v -abam {input.bam} -b {params.blacklist} |\
+    bedtools bamtobed -i - |gawk 'BEGIN{{OFS="\\t"}}{{$4="N";$5="1000";print $0}}' |\
+    grep -v chrM |grep -v {params.f1} |grep -v {params.f2} |\
+    gawk -F "\\t" 'BEGIN{{OFS=FS}}{{if($6=="+"){{$2=$2+4}} else if($6=="-"){{$3=$3-5}} print $0}}' \
+    > {output.shift}
+
+    cat {output.shift} |gawk '{{ if($6=="+"){{print $1"\\t"$2-1"\\t"$2"\\t"$4;}} else{{print $1"\\t"$3-1"\\t"$3"\\t"$4}} }}' \
+    > {output.insert__}
+    """
+
+#扩展
+rule bedExtension:
+    input:
+        insert_bed=rules.bedGeneration.output.insert__
+    output:
+        ext_bed="processed/{sample}/atac/bed/ext{ext_n}/{sample}.ext{ext_n}.bed"
+    threads:1
+    shell: """ 
+    cat {input.insert_bed} | grep -v GL | grep -v NC | grep -v chrhs37d5 | gawk '{{print $1"\\t"$3-{wildcards.ext_n}"\\t"$3+{wildcards.ext_n}"\\t"$4}}' \
+    > {output.ext_bed}
+    """
+
+
+rule extened_bed_to_bam:
+    input:
+        bed=rules.bedExtension.output.ext_bed,
+    output:
+        bam="processed/{sample}/atac/bam/ext{ext_n}/{sample}.ext{ext_n}.bam",
+        bai="processed/{sample}/atac/bam/ext{ext_n}/{sample}.ext{ext_n}.bam.bai",
+    params:
+        genome_size=config["refs"][config["ref_genome"]]["CHROMSIZES"]
+    threads:1
+    conda:"../envs/main_env.yaml",
+    shell: """ 
+    bedToBam -i <(cat {input.bed} | awk '$2>0') -g {params.genome_size}|samtools sort /dev/stdin > {output.bam} 
+    samtools index {output.bam}
+    """
+
+
+rule unbinned_shift_extended_bigwig:
+    input:
+        bed=rules.bedExtension.output.ext_bed
+    output:
+        bw="processed/{sample}/atac/bigWig/unbinned/ext{ext_n}/{sample}.ext{ext_n}.unbinned.cpm.bw"
+    params:
+        genome_size=config["refs"][config["ref_genome"]]["CHROMSIZES"]
+    conda:"../envs/main_env.yaml",
+    shell:"""
+    genome_size={params.genome_size}
+    bigWig={output.bw}
+    
+    scalingFactor=$(echo "scale=10;1000000/`cat {input.bed}|wc -l`"|bc)
+    bedtools genomecov \
+        -i <({input.bed} | awk '$2>0') \
+        -g $genome_size\
+        -scale $scalingFactor \
+        -bga |\
+    sort --parallel 1 -k1,1 -k2,2n |\
+    grep -v Un|grep -v chrhs37d5 | grep -v NC| grep -v GL |grep -v chrM|grep -v chrEBV > {input.bed}.bedGraph
+
+    bedGraphToBigWig {input.bed}.bedGraph $genome_size $bigWig
+    rm {input.bed}.bedGraph
+    """
+
+#单细胞call peak
+rule atac_peak_calling:
+    input:
+        bed=rules.bedExtension.output.ext_bed
+    output:
+        narrow_peak="processed/{sample}/atac/peak/ext{ext_n}/{sample}_ext{ext_n}_peaks.narrowPeak",
+    threads: 1
+    params:
+        #存储结果的文件夹
+        peak_dir="processed/{sample}/atac/peak/ext{ext_n}",
+        genome_size=config["refs"][config["ref_genome"]]["macs2_genome_size"]
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        macs2 callpeak \
+        -t {input.bed} \
+        -f BED \
+        -g {params.genome_size} \
+        --nomodel \
+        --bdg \
+        --call-summits \
+        --outdir {params.peak_dir} \
+        --name {wildcards.sample}_ext{wildcards.ext_n}
+        """

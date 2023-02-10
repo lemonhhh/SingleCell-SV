@@ -1,0 +1,120 @@
+#TODO:只用R2去map的
+rule ct_R2_mapping:
+    input:
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+        R2 = rules.ctSplit.output.split_R2
+    output:
+        R2sortbam = "processed/{sample}/ct/{sample}.R2.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R2} | samtools sort -@{threads} -o {output.R2sortbam} -
+    """
+
+#去PCR的重
+rule ct_picard_sort_rmdup:
+    input:
+        R2sortbam = rules.ct_R2_mapping.output.R2sortbam,
+    output:
+        re_sort = temp("processed/{sample}/ct/{sample}.ct.R2.querysort.bam"),
+        rmdup_bam = "processed/{sample}/ct/{sample}.ct.R2.rmdup.bam",
+        rmdup_mat = "processed/{sample}/ct/{sample}.ct.R2.rmdup.mat",
+    conda:"../envs/main_env.yaml",
+
+    shell:"""
+        picard SortSam INPUT={input.R2sortbam} OUTPUT={output.re_sort} SORT_ORDER=queryname
+        picard MarkDuplicates -I {output.re_sort} -O {output.rmdup_bam} -M {output.rmdup_mat} --REMOVE_DUPLICATES true
+    """
+
+#将bam转换为bed
+rule ct_bam2bed:
+    input:
+        rmdup_bam = rules.ct_picard_sort_rmdup.output.rmdup_bam,
+    output:
+        R2_dedup_bed = "processed/{sample}/ct/{sample}.ct.R2_5.bed.gz"
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bedtools bamtobed -i {input.rmdup_bam} | gzip > {output.R2_dedup_bed}
+    """
+
+
+#格式转换
+rule ct_fastq2tabfastq:
+    input:
+        R1 = rules.ctSplit.output.split_R1,
+        R2 = rules.ctSplit.output.split_R2,
+    output:
+        R1_out = temp("processed/{sample}/tabfastq/{sample}.ct.R1.tabfastq.gz"),
+        R2_out = temp("processed/{sample}/tabfastq/{sample}.ct.R2.tabfastq.gz"),
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        seqkit fx2tab {input.R1} | gzip > {output.R1_out}
+        seqkit fx2tab {input.R2} | gzip > {output.R2_out}
+    """
+
+#去除malbac造成的重复
+rule ct_extract_fastq:
+    input:
+        R2_dedup_bed = rules.ct_bam2bed.output.R2_dedup_bed,
+        R1 = rules.ct_fastq2tabfastq.output.R1_out,
+        R2 = rules.ct_fastq2tabfastq.output.R2_out,
+    output:
+        R1out_tabfastq = temp("processed/{sample}/tabfastq/{sample}.ct.R1.dedup.tabfastq.gz"),
+        R2out_tabfastq = temp("processed/{sample}/tabfastq/{sample}.ct.R2.dedup.tabfastq.gz"),
+    params:
+        max_sep_distance = 20,
+        min_mapping_qual = 30,
+    conda: "../envs/main_env.yaml",
+    shell:"""
+        Rscript ./CHARM/CHARM_scripts/CTHiRES.extract_dedup_reads.R {params.max_sep_distance} {params.min_mapping_qual} \
+                            {input.R2_dedup_bed} {input.R1} {input.R2} {output.R1out_tabfastq} {output.R2out_tabfastq}
+    """
+
+#将tabfastq转换为fastq
+rule ct_tabfastq2fastq:
+    input:
+        R1tab = rules.ct_extract_fastq.output.R1out_tabfastq,
+        R2tab = rules.ct_extract_fastq.output.R2out_tabfastq,
+    output:
+        R1 = "processed/{sample}/ct/{sample}.ct.dedup.R1.fq.gz",
+        R2 = "processed/{sample}/ct/{sample}.ct.dedup.R2.fq.gz",
+    conda: "../envs/main_env.yaml",
+    shell:"""
+        seqkit tab2fx {input.R1tab} | gzip > {output.R1} || touch {output.R1}
+        seqkit tab2fx {input.R2tab} | gzip > {output.R2} || touch {output.R2}
+    """
+
+#用去重后的R1 R2生成双端map后的结果
+rule ct_pair_end_mapping:
+    input:
+        R1dedup = rules.ct_tabfastq2fastq.output.R1,
+        R2dedup = rules.ct_tabfastq2fastq.output.R2,
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+    output:
+        sortbam = "processed/ct_all/{sample}.ct.pairend.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    resources:
+        nodes =  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R1dedup} {input.R2dedup} | samtools sort -@{threads} -o {output.sortbam} -
+        samtools index {output.sortbam}
+        """
+
+ #用去重后的R2再map       
+rule ct_R2_dedup_mapping:
+    input:
+        R2dedup = rules.ct_tabfastq2fastq.output.R2,
+        ref_genome=config["refs"][config["ref_genome"]]["bwa_mem2_index"],
+    output:
+        R2sortbam = "processed/ct_all/{sample}.ct.R2.sort.bam"
+    threads:  config["resources"]["bwa_cpu_threads"],
+    resources:
+        nodes =  config["resources"]["bwa_cpu_threads"],
+    conda:"../envs/main_env.yaml",
+    shell:"""
+        bwa-mem2 mem -5SP -t {threads} {input.ref_genome} {input.R2dedup} | samtools sort -@{threads} -o {output.R2sortbam} -
+        samtools index {output.R2sortbam}
+        """
+
+
