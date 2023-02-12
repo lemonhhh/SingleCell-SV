@@ -15,9 +15,9 @@ pos: 高置信SV list中breakpoints附近的小矩阵。
 neg:
 - 癌症细胞系(K562)
     - 不与breakpoint有overlap的区域
-来自snHiC的数据集
+    来自snHiC的数据集
 - GM12878
-来自Dip-c的数据集
+  来自Dip-c的数据集
     - 随机点
     - loop
     - AB区间转换的点
@@ -28,6 +28,10 @@ neg:
 
 ```shell
 conda env create -f sv.yml
+
+conda create -n sv-env python=3.8
+conda activate sv-env
+pip install -r requirement.txt
 ```
 
 
