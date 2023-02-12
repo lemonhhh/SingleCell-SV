@@ -1,0 +1,9 @@
+numpy
+pandas
+matplotlib
+seaborn
+cooler
+torch
+torchvision
+torchensemble
+#jupyter
