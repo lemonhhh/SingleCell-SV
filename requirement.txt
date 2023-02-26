@@ -6,4 +6,5 @@ cooler
 torch
 torchvision
 torchensemble
+configargparse
 #jupyter
