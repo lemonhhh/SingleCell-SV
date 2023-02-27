@@ -1,0 +1,4 @@
+expname=single_cell
+
+datadir=../input_data/data_imputation.npy
+labeldir=../input_data/label_imputation_binary.npy
