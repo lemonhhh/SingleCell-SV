@@ -29,6 +29,7 @@ def config_parser():
     parser.add_argument("--N_iters", type=int, default=250001, help='number of iterations')
     parser.add_argument("--no_reload", action='store_true',
                         help='do not reload weights from saved ckpt')
+    parser.add_argument("--save_freq", type=int, default=5000, help='epoch frequency to save checkpoints')
 
     # ---------- rendering options ---------- #
     # store example, store_true denotes True if use_viewdirs exsists in the command line else False
