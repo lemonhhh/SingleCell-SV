@@ -8,3 +8,5 @@ torchvision
 torchensemble
 configargparse
 #jupyter
+torchinfo
+torchmetrics
