@@ -36,9 +36,6 @@ n_iters=20
 def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
                             ,logscale=False,pad=1,std=1,rp=0.5,tol=0.01,window_size=500000000
                             ,step_size=10000000,output_dist=500000000,min_cutoff=0,n_iters=20):
-    '''
-    label_list都是intra的sv
-    '''
     
     #找到有label对应的位置
     pos_data_list = []
@@ -104,7 +101,6 @@ def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
         #fetch submatrix
         submatrix = matrix[x1:x2+1, y1:y2+1]
 
-        
         if (submatrix.shape[0] == window):
             pos_data_list.append(submatrix)
             pos_label_list.append(string)
@@ -115,7 +111,7 @@ def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
 
 #这个暂时先不动
 resolution = 100000
-window = 28
+window = 21
 cool_dir = "raw_data/scihic/K562/cooler/"
 #读取所有的mcool文件
 pos_data_list = []
@@ -143,7 +139,7 @@ pos_data_array = np.rollaxis(pos_data_array,-1)
 pos_label_list = np.array(pos_label_list)
 
 #保存
-np.save("input_data/pos_data_w28_noimpute.npy",pos_data_array)
-np.save("input_data/pos_label_w28_noimpute.npy",pos_label_list)
+np.save("input_data/pos_data_w21_noimpute.npy",pos_data_array)
+np.save("input_data/pos_label_w21_noimpute.npy",pos_label_list)
 
 
