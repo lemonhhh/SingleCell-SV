@@ -53,7 +53,7 @@ def random_walk_cpu(P, rp, tol, n_iters=20):
 
 #raw_matrix要是一个稀疏矩阵，代表一个细胞的一个染色体
 def imputation_rwr(cell_cool,chrom,resolution=100000,logscale=False,pad=1,std=1,rp=0.5,tol=0.01,window_size=500000000
-                    ,step_size=10000000,output_dist=500000000,min_cutoff=0):
+                    ,step_size=10000000,output_dist=500000000,min_cutoff=0,n_iters=20):
     
     A = cell_cool.matrix(balance=False, sparse=True).fetch(chrom)
     n_bins = A.shape[0]
