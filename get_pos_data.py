@@ -14,11 +14,12 @@ k562_list = sv_list[sv_list['Cell Line']=="K562"]
 k562_list_intra = k562_list[k562_list['chrom1']==k562_list['chrom2']]
 k562_list_intra.index = range(len(k562_list_intra))
 
+
 #列出raw_data/K562/cooler/文件夹下所有的文件
 file_list = os.listdir("./raw_data/scihic/K562/cooler/")
 mcool_list = [i for i in file_list if i.endswith(".mcool")]#读取所有的mcool文件
 
-
+#333*36
 #rwr config
 resolution_rwr=100000
 logscale=False
@@ -32,14 +33,17 @@ output_dist=500000000
 min_cutoff=0
 n_iters=20
 
-
 def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
                             ,logscale=False,pad=1,std=1,rp=0.5,tol=0.01,window_size=500000000
                             ,step_size=10000000,output_dist=500000000,min_cutoff=0,n_iters=20):
     
     #找到有label对应的位置
+    #创建空np
     pos_data_list = []
     pos_label_list = []
+    # pos_data_list = np.array([])
+    # pos_label_list = np.array([])
+    
     
     #遍历每一个sv的breakpoint
     for i in range(len(label_list)):
@@ -65,12 +69,21 @@ def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
         #中心点的坐标
         x_c = bin1.index[0]#得到的是索引
         y_c = bin2.index[0]
+
         #起止点的坐标
-        x1 = x_c - int((window-1)/2)
-        x2 = x_c + int((window-1)/2)
-        y1 = y_c - int((window-1)/2)
-        y2 = y_c + int((window-1)/2)
+        if window % 2 == 0:
+            x1 = x_c - int((window-1)/2)
+            x2 = x_c + int((window-1)/2) + 1
         
+            y1 = y_c - int((window-1)/2)
+            y2 = y_c + int((window-1)/2) + 1
+        else:
+            x1 = x_c - int((window-1)/2)
+            x2 = x_c + int((window-1)/2)
+            
+            y1 = y_c - int((window-1)/2)
+            y2 = y_c + int((window-1)/2)
+  
         #特殊情况下breakpoint不在submatrix的中心
         #如果x1或y1小于0，就取0
         if x1 < 0:
@@ -87,45 +100,49 @@ def get_pos_submatrix_intra(clr,window,label_list,impute=False,resolution=100000
             y2 = max_length-1
             y1 = max_length-window
         
-    
         if impute:
             #impute by rwr
             matrix = imputation_rwr(clr,chrom1,resolution,logscale,pad,std,rp,tol,window_size
                     ,step_size,output_dist,min_cutoff,n_iters)
-            #将matrix转成array
             matrix = np.array(matrix)
-        #不impute的话，直接取原始matrix      
+   
         else:
-            #raw matrix
             matrix = clr.matrix(balance=False)[:]
-        #fetch submatrix
+ 
         submatrix = matrix[x1:x2+1, y1:y2+1]
-
+        print("shape",submatrix.shape)
         if (submatrix.shape[0] == window):
+            
             pos_data_list.append(submatrix)
             pos_label_list.append(string)
 
-
+   
     return pos_data_list,pos_label_list
 
 
 #这个暂时先不动
 resolution = 100000
-window = 21
+window = 32
 cool_dir = "raw_data/scihic/K562/cooler/"
-#读取所有的mcool文件
+
+
+#创建空np
+# pos_data_list = np.array([])
+# pos_label_list = np.array([])
 pos_data_list = []
 pos_label_list = []
 
-
+#读取所有的mcool文件
+i = 1
 for mc in mcool_list:
+    print(i,mc)
+    i = i+1
     clr = cooler.Cooler(cool_dir+mc+"::/resolutions/"+str(resolution))
     sc_pos_data_list,sc_pos_label_list = get_pos_submatrix_intra(clr,window,k562_list_intra
                                                                 ,False,resolution_rwr,
                                                                 logscale,pad,std,rp,tol,
                                                                 window_size,step_size,
                                                                 output_dist,min_cutoff,n_iters) 
-    
 
     pos_data_list.append(sc_pos_data_list)
     pos_label_list.append(sc_pos_label_list)
@@ -135,11 +152,12 @@ pos_data_list = [item for sublist in pos_data_list for item in sublist]
 pos_label_list = [item for sublist in pos_label_list for item in sublist]
 pos_data_array = np.dstack(pos_data_list)
 pos_data_array = np.rollaxis(pos_data_array,-1)
-
+print(pos_data_array.shape)
 pos_label_list = np.array(pos_label_list)
-
+print(pos_label_list.shape)
 #保存
-np.save("input_data/pos_data_w21_noimpute.npy",pos_data_array)
-np.save("input_data/pos_label_w21_noimpute.npy",pos_label_list)
+
+np.save("input_data/pos_data_w32_noimpute.npy",pos_data_array)
+np.save("input_data/pos_label_w32_noimpute.npy",pos_label_list)
 
 
